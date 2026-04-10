@@ -13,7 +13,7 @@ export default async function handler(req, res) {
 
   try {
     const data = await resend.emails.send({
-      from: 'Events And Pro <emails.liaisonit.com>', // Keep onboarding@resend.dev unless you verify a domain
+      from: 'emails.liaisonit.com>', // Keep onboarding@resend.dev unless you verify a domain
       to,
       subject,
       html

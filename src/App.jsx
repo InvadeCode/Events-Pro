@@ -328,8 +328,8 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
     }
 
     try {
-      // Connect to the local Express server we just created
-      const response = await fetch('http://localhost:3001/api/send-email', {
+      // UPDATED for Vercel: Changed from http://localhost:3001/api/send-email to the relative /api path
+      const response = await fetch('/api/send-email', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -343,14 +343,12 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.error || 'Failed to send email via Server');
+        throw new Error(errorData?.error || 'Failed to send email via Serverless Function');
       }
       
       setSubmitStatus('success');
       setShowModal(true);
     } catch (error) {
-      // Removed console.error to prevent Canvas UI red error overlay when local server is not running
-      // If the backend server isn't running, it throws a 'Failed to fetch' error
       if (error instanceof TypeError && error.message === 'Failed to fetch') {
         setSubmitStatus('server_error');
       } else {
@@ -845,9 +843,9 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
             ) : (
               <>
                 <div style={{fontSize:'64px', marginBottom:'20px'}}>⚠️</div>
-                <h2 style={{fontFamily:"'Playfair Display',serif", fontSize:'26px', fontWeight: 600, marginBottom:'12px', color: 'var(--ink)'}}>Server Connection Failed</h2>
+                <h2 style={{fontFamily:"'Playfair Display',serif", fontSize:'26px', fontWeight: 600, marginBottom:'12px', color: 'var(--ink)'}}>API Connection Failed</h2>
                 <p style={{color:'var(--muted)', fontSize:'15px', lineHeight: 1.6, marginBottom:'32px'}}>
-                  Could not connect to the local email server. Make sure you are running <code>node server.js</code> on port 3001 in your project root.
+                  Could not connect to the email API. Make sure your serverless functions are deployed properly on Vercel.
                   <br/><br/>
                   To bypass this in the frontend, you can generate an email draft directly using your mail client with all your data pre-filled:
                 </p>

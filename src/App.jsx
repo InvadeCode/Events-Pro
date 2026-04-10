@@ -144,6 +144,7 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [submitStatus, setSubmitStatus] = useState('idle'); // 'idle', 'success', 'server_error', 'error'
+  const [errorMessage, setErrorMessage] = useState(''); // Track exact error
   
   const totalSteps = 9;
 
@@ -231,80 +232,281 @@ export default function App() {
   // --- SUBMISSION & EMAIL GENERATION ---
   
   const generateTextReport = () => {
-    // Generates a plain text version for the mailto fallback
+    // Generates a comprehensive plain text version for the mailto fallback
     return `VENUE RECCE REPORT: ${formData.venueName || 'N/A'}
-Client / Event: ${formData.clientName || 'N/A'}
-Date: ${formData.eventDate || 'N/A'}
+Client / Event: ${formData.clientName || 'N/A'} | Date: ${formData.eventDate || 'N/A'}
 Location: ${formData.venueCity} - ${formData.venueAddress}
-Expected Pax: ${formData.paxCount}
-Event Type: ${formData.eventType}
 Recce Done By: ${formData.reccePerson} (${formData.reccePhone})
 
---- DIMENSIONS ---
-Stage Size: ${formData.stageSize}
-Stage Height: ${formData.stageHeight}
-Truss Clearance: ${formData.trussHeight} ft
-Loading Bay: ${formData.loadingBay}
+--- 1. BASIC INFO ---
+Expected Pax: ${formData.paxCount || 'N/A'}
+Event Type: ${formData.eventType || 'N/A'}
+Venue Contact: ${formData.venueContact || 'N/A'} (${formData.venuePhone || 'N/A'})
+Venue Rating: ${formData.rating} / 5 Stars
 
---- SUMMARY ASSESSMENT ---
-Suitability: ${formData.summary.suitability}
+--- 2. DIMENSIONS ---
+Stage Size: ${formData.stageSize || 'N/A'} | Stage Height: ${formData.stageHeight || 'N/A'}
+Truss Clearance: ${formData.trussHeight || 'N/A'} ft
+Loading Bay: ${formData.loadingBay || 'N/A'}
+
+--- 3. SUMMARY ASSESSMENT ---
+Suitability: ${formData.summary.suitability || 'N/A'}
 Key Strengths: ${formData.summary.strengths || 'None noted'}
 Concerns / Red Flags: ${formData.summary.concerns || 'None noted'}
 Action Items: ${formData.summary.nextSteps || 'None noted'}
 
-(Generated via Events And Pro Recce System)`;
+(For full details including Timings, Permits, and Checklists, refer to the HTML email sent via the Events And Pro System)`;
   };
 
   const generateEmailHTML = () => {
-    // Generates a beautiful HTML email structure to send via Resend
+    // Helper to secure empty values
+    const val = (v) => v ? v : '<span style="color:#999;">N/A</span>';
+    
+    // Build Checklist HTML
+    const checklistHTML = CHECKLIST_GROUPS.map(group => {
+      const itemsHtml = group.items.map(item => {
+        const isChecked = formData.checklist[item.id] ? '<span style="color:#27ae60; font-weight:bold;">✅ Yes</span>' : '<span style="color:#c0392b; font-weight:bold;">❌ No / Pending</span>';
+        return `
+          <tr>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #eeeeee; font-size: 13px; color: #333; width: 70%;">${item.label}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #eeeeee; font-size: 13px; text-align: right;">${isChecked}</td>
+          </tr>`;
+      }).join('');
+      return `
+        <h4 style="margin: 20px 0 8px 0; color: #1a3c5e; font-size: 15px; border-bottom: 1px solid #ddd; padding-bottom: 4px;">${group.title}</h4>
+        <table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #eeeeee; border-radius: 6px; overflow: hidden; background: #faf8f3;">
+          ${itemsHtml}
+        </table>`;
+    }).join('');
+
+    // Build Dimensions HTML
+    const dimensionsHTML = formData.dimensions.map(d => `
+      <tr>
+        <td style="padding: 10px; border: 1px solid #e0d9cc; font-weight: bold; color: #0d0d0d;">${val(d.name)}</td>
+        <td style="padding: 10px; border: 1px solid #e0d9cc; color: #333;">${val(d.l)} x ${val(d.w)} x ${val(d.h)}</td>
+        <td style="padding: 10px; border: 1px solid #e0d9cc; color: #333;">${val(d.area)}</td>
+        <td style="padding: 10px; border: 1px solid #e0d9cc; color: #333;">${val(d.seating)}</td>
+        <td style="padding: 10px; border: 1px solid #e0d9cc; color: #555; font-size: 12px;">${val(d.notes)}</td>
+      </tr>
+    `).join('');
+
+    // Build Timings HTML
+    const timingsHTML = formData.timings.filter(t => t.start || t.end || t.date).map(t => `
+      <tr>
+        <td style="padding: 8px 10px; border: 1px solid #e0d9cc; font-weight: bold; color: #1a3c5e;">${val(t.activity)}</td>
+        <td style="padding: 8px 10px; border: 1px solid #e0d9cc; color: #333;">${val(t.date)}</td>
+        <td style="padding: 8px 10px; border: 1px solid #e0d9cc; color: #333;">${val(t.start)} - ${val(t.end)}</td>
+        <td style="padding: 8px 10px; border: 1px solid #e0d9cc; color: #333;">${val(t.area)}</td>
+      </tr>
+    `).join('');
+
+    // Build Permits HTML
+    const permitsHTML = formData.permits.map(p => `
+      <tr>
+        <td style="padding: 8px 10px; border: 1px solid #e0d9cc; color: #0d0d0d;">${val(p.name)}</td>
+        <td style="padding: 8px 10px; border: 1px solid #e0d9cc; color: #333;">${val(p.responsible)}</td>
+        <td style="padding: 8px 10px; border: 1px solid #e0d9cc; font-weight: bold; color: ${p.status === 'Obtained' ? '#27ae60' : p.status === 'Pending' ? '#c0392b' : '#333'};">${val(p.status)}</td>
+        <td style="padding: 8px 10px; border: 1px solid #e0d9cc; color: #333;">${val(p.date)}</td>
+      </tr>
+    `).join('');
+
+    // Do's and Don'ts Data
+    const defaultDos = ['Arrive on time for setup', 'Use venue-approved tape', 'Coordinate furniture moves', 'Submit gate passes'];
+    const defaultDonts = ['Do NOT drill, nail or screw', 'Do NOT use double-sided tape', 'Do NOT exceed sound limits', 'Do NOT block emergency exits'];
+    
+    const dosList = defaultDos.map((text, i) => formData.dos[`d${i}`] ? `<li style="padding-bottom: 4px; color: #27ae60;">✅ ${text}</li>` : '').join('') + 
+                    (formData.customDos ? `<li style="padding-bottom: 4px; color: #27ae60;">✅ ${formData.customDos}</li>` : '');
+    
+    const dontsList = defaultDonts.map((text, i) => formData.donts[`dn${i}`] ? `<li style="padding-bottom: 4px; color: #c0392b;">❌ ${text}</li>` : '').join('') +
+                      (formData.customDonts ? `<li style="padding-bottom: 4px; color: #c0392b;">❌ ${formData.customDonts}</li>` : '');
+
+    // Beautiful Inline CSS HTML Email
     return `
       <!DOCTYPE html>
-      <html>
+      <html lang="en">
       <head>
-        <style>
-          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1a1a1a; line-height: 1.6; padding: 20px; background: #f9f9f9; }
-          .container { max-width: 800px; margin: 0 auto; background: #ffffff; padding: 30px; border-radius: 8px; border-top: 4px solid #c9a84c; }
-          h1 { color: #0d0d0d; font-size: 24px; margin-bottom: 5px; }
-          h2 { color: #1a3c5e; font-size: 18px; border-bottom: 2px solid #f0d98a; padding-bottom: 8px; margin-top: 30px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-          th, td { padding: 10px; border-bottom: 1px solid #e0d9cc; text-align: left; font-size: 14px; }
-          th { background: #f5f2eb; color: #1a3c5e; width: 35%; }
-          .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; background: #f0f9ee; color: #27ae60; }
-        </style>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
       </head>
-      <body>
-        <div class="container">
-          <h1>Venue Recce Report: ${formData.venueName || 'N/A'}</h1>
-          <p><strong>Client / Event:</strong> ${formData.clientName || 'N/A'} | <strong>Date:</strong> ${formData.eventDate || 'N/A'}</p>
+      <body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px 0; color: #0d0d0d;">
+        
+        <!-- Main Wrapper -->
+        <table width="100%" max-width="800" align="center" cellpadding="0" cellspacing="0" style="max-width: 800px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #dddddd; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
           
-          <h2>1. Basic Information</h2>
-          <table>
-            <tr><th>Location</th><td>${formData.venueCity} - ${formData.venueAddress}</td></tr>
-            <tr><th>Expected Pax</th><td>${formData.paxCount}</td></tr>
-            <tr><th>Event Type</th><td>${formData.eventType}</td></tr>
-            <tr><th>Recce Done By</th><td>${formData.reccePerson} (${formData.reccePhone})</td></tr>
-            <tr><th>Venue Contact</th><td>${formData.venueContact} (${formData.venuePhone})</td></tr>
-            <tr><th>Venue Rating</th><td>${formData.rating} / 5 Stars</td></tr>
-          </table>
+          <!-- Header -->
+          <tr>
+            <td style="background-color: #0d0d0d; border-bottom: 4px solid #c9a84c; padding: 30px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; letter-spacing: 1px; font-family: Georgia, serif;">Events And Pro</h1>
+              <p style="margin: 8px 0 0 0; color: #c9a84c; font-size: 14px; text-transform: uppercase; letter-spacing: 2px;">Comprehensive Venue Recce Report</p>
+            </td>
+          </tr>
 
-          <h2>2. Dimensions Summary</h2>
-          <table>
-            <tr><th>Stage Details</th><td>${formData.stageSize} (Size), ${formData.stageHeight} (Height)</td></tr>
-            <tr><th>Truss Clearance</th><td>${formData.trussHeight} ft</td></tr>
-            <tr><th>Loading Bay</th><td>${formData.loadingBay}</td></tr>
-          </table>
+          <!-- Content Body -->
+          <tr>
+            <td style="padding: 40px 30px;">
+              
+              <!-- Core Overview Highlight -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #faf8f3; border-left: 4px solid #c9a84c; padding: 20px; border-radius: 4px; margin-bottom: 30px;">
+                <tr>
+                  <td style="padding-bottom: 10px;">
+                    <h2 style="margin: 0; color: #1a3c5e; font-size: 22px;">${val(formData.venueName)}</h2>
+                    <p style="margin: 4px 0 0 0; color: #666; font-size: 14px;">📍 ${val(formData.venueCity)} — ${val(formData.venueAddress)}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-top: 15px; border-top: 1px solid #e0d9cc;">
+                    <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 14px; line-height: 1.6;">
+                      <tr>
+                        <td width="50%"><strong>Client/Event:</strong> ${val(formData.clientName)}</td>
+                        <td width="50%"><strong>Event Date:</strong> ${val(formData.eventDate)}</td>
+                      </tr>
+                      <tr>
+                        <td width="50%"><strong>Expected Pax:</strong> ${val(formData.paxCount)}</td>
+                        <td width="50%"><strong>Event Type:</strong> ${val(formData.eventType)}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
 
-          <h2>3. Summary Assessment</h2>
-          <table>
-            <tr><th>Suitability</th><td><strong>${formData.summary.suitability}</strong></td></tr>
-            <tr><th>Key Strengths</th><td>${formData.summary.strengths || 'None noted'}</td></tr>
-            <tr><th>Concerns/Red Flags</th><td>${formData.summary.concerns || 'None noted'}</td></tr>
-            <tr><th>Action Items</th><td>${formData.summary.nextSteps || 'None noted'}</td></tr>
-          </table>
-          
-          <br/>
-          <p style="font-size: 12px; color: #888;">This is an automated report generated from the Events And Pro Recce System.</p>
-        </div>
+              <!-- 1. Contact Info -->
+              <h3 style="color: #1a3c5e; border-bottom: 2px solid #f0d98a; padding-bottom: 8px; margin-bottom: 15px;">👤 Contact Information</h3>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; font-size: 14px; margin-bottom: 30px;">
+                <tr>
+                  <th width="25%" style="padding: 12px; background-color: #f5f2eb; border: 1px solid #e0d9cc; text-align: left; color: #1a3c5e;">Recce Done By</th>
+                  <td width="25%" style="padding: 12px; border: 1px solid #e0d9cc;">${val(formData.reccePerson)}<br><span style="color:#666; font-size:12px;">${val(formData.reccePhone)}</span></td>
+                  <th width="25%" style="padding: 12px; background-color: #f5f2eb; border: 1px solid #e0d9cc; text-align: left; color: #1a3c5e;">Venue Contact</th>
+                  <td width="25%" style="padding: 12px; border: 1px solid #e0d9cc;">${val(formData.venueContact)}<br><span style="color:#666; font-size:12px;">${val(formData.venuePhone)}</span></td>
+                </tr>
+              </table>
+
+              <!-- 2. Dimensions -->
+              <h3 style="color: #1a3c5e; border-bottom: 2px solid #f0d98a; padding-bottom: 8px; margin-bottom: 15px;">📐 Venue Dimensions & Capacities</h3>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; font-size: 13px; margin-bottom: 15px; text-align: left;">
+                <thead>
+                  <tr>
+                    <th style="padding: 12px; background-color: #1a3c5e; color: #ffffff; border: 1px solid #1a3c5e;">Space / Area</th>
+                    <th style="padding: 12px; background-color: #1a3c5e; color: #ffffff; border: 1px solid #1a3c5e;">L x W x H (ft)</th>
+                    <th style="padding: 12px; background-color: #1a3c5e; color: #ffffff; border: 1px solid #1a3c5e;">Area (sq ft)</th>
+                    <th style="padding: 12px; background-color: #1a3c5e; color: #ffffff; border: 1px solid #1a3c5e;">Seating</th>
+                    <th style="padding: 12px; background-color: #1a3c5e; color: #ffffff; border: 1px solid #1a3c5e;">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${dimensionsHTML || '<tr><td colspan="5" style="padding: 10px; text-align:center; border: 1px solid #e0d9cc;">No dimensions added</td></tr>'}
+                </tbody>
+              </table>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; font-size: 13px; margin-bottom: 30px;">
+                <tr>
+                  <td style="padding: 8px; border: 1px solid #e0d9cc; background: #faf8f3;"><strong>Stage Size:</strong> ${val(formData.stageSize)}</td>
+                  <td style="padding: 8px; border: 1px solid #e0d9cc; background: #faf8f3;"><strong>Stage Hgt:</strong> ${val(formData.stageHeight)}ft</td>
+                  <td style="padding: 8px; border: 1px solid #e0d9cc; background: #faf8f3;"><strong>Truss Clear:</strong> ${val(formData.trussHeight)}ft</td>
+                  <td style="padding: 8px; border: 1px solid #e0d9cc; background: #faf8f3;"><strong>Load Bay:</strong> ${val(formData.loadingBay)}</td>
+                </tr>
+              </table>
+
+              <!-- 3. Checklists -->
+              <h3 style="color: #1a3c5e; border-bottom: 2px solid #f0d98a; padding-bottom: 8px; margin-bottom: 10px;">✅ Infrastructure Checklist</h3>
+              <div style="margin-bottom: 30px;">
+                ${checklistHTML}
+              </div>
+
+              <!-- 4. Dos and Donts -->
+              <h3 style="color: #1a3c5e; border-bottom: 2px solid #f0d98a; padding-bottom: 8px; margin-bottom: 15px;">⚖️ Venue Rules</h3>
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 30px;">
+                <tr>
+                  <td width="48%" valign="top" style="background-color: #f0f9ee; border: 1px solid #a8d5b5; border-radius: 8px; padding: 15px;">
+                    <h4 style="margin: 0 0 10px 0; color: #27ae60;">✅ Do's</h4>
+                    <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #333;">
+                      ${dosList || '<li>No specific rules noted.</li>'}
+                    </ul>
+                  </td>
+                  <td width="4%"></td>
+                  <td width="48%" valign="top" style="background-color: #fdf0ee; border: 1px solid #e5b0a8; border-radius: 8px; padding: 15px;">
+                    <h4 style="margin: 0 0 10px 0; color: #c0392b;">❌ Don'ts</h4>
+                    <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #333;">
+                      ${dontsList || '<li>No prohibitions noted.</li>'}
+                    </ul>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- 5. Timings -->
+              <h3 style="color: #1a3c5e; border-bottom: 2px solid #f0d98a; padding-bottom: 8px; margin-bottom: 15px;">🕐 Event Timings</h3>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; font-size: 13px; margin-bottom: 30px; text-align: left;">
+                <thead>
+                  <tr>
+                    <th style="padding: 10px; background-color: #f5f2eb; border: 1px solid #e0d9cc; color: #1a3c5e;">Activity</th>
+                    <th style="padding: 10px; background-color: #f5f2eb; border: 1px solid #e0d9cc; color: #1a3c5e;">Date</th>
+                    <th style="padding: 10px; background-color: #f5f2eb; border: 1px solid #e0d9cc; color: #1a3c5e;">Time</th>
+                    <th style="padding: 10px; background-color: #f5f2eb; border: 1px solid #e0d9cc; color: #1a3c5e;">Area</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${timingsHTML || '<tr><td colspan="4" style="padding: 10px; text-align:center; border: 1px solid #e0d9cc;">No timings recorded</td></tr>'}
+                </tbody>
+              </table>
+
+              <!-- 6. Permits -->
+              <h3 style="color: #1a3c5e; border-bottom: 2px solid #f0d98a; padding-bottom: 8px; margin-bottom: 15px;">📜 Permits & Licenses</h3>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; font-size: 13px; margin-bottom: 30px; text-align: left;">
+                <thead>
+                  <tr>
+                    <th style="padding: 10px; background-color: #f5f2eb; border: 1px solid #e0d9cc; color: #1a3c5e;">Permit Name</th>
+                    <th style="padding: 10px; background-color: #f5f2eb; border: 1px solid #e0d9cc; color: #1a3c5e;">Responsible</th>
+                    <th style="padding: 10px; background-color: #f5f2eb; border: 1px solid #e0d9cc; color: #1a3c5e;">Status</th>
+                    <th style="padding: 10px; background-color: #f5f2eb; border: 1px solid #e0d9cc; color: #1a3c5e;">Due Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${permitsHTML || '<tr><td colspan="4" style="padding: 10px; text-align:center; border: 1px solid #e0d9cc;">No permits tracked</td></tr>'}
+                </tbody>
+              </table>
+
+              <!-- 7. Links -->
+              <h3 style="color: #1a3c5e; border-bottom: 2px solid #f0d98a; padding-bottom: 8px; margin-bottom: 15px;">🔗 Attached Links</h3>
+              <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 14px; margin-bottom: 30px; border: 1px solid #e0d9cc; border-radius: 6px; background-color: #faf8f3;">
+                <tr>
+                  <td style="padding: 12px; border-bottom: 1px solid #e0d9cc;"><strong>Photo/Drive Folder:</strong> <a href="${formData.photoLinks.storageLink || '#'}" style="color: #c9a84c;">${formData.photoLinks.storageLink ? 'Click to Open' : 'Not Provided'}</a></td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px;"><strong>Map Location Pin:</strong> <a href="${formData.photoLinks.mapPin || '#'}" style="color: #c9a84c;">${formData.photoLinks.mapPin ? 'Click to Open' : 'Not Provided'}</a></td>
+                </tr>
+              </table>
+
+              <!-- 8. Final Summary -->
+              <h3 style="color: #1a3c5e; border-bottom: 2px solid #f0d98a; padding-bottom: 8px; margin-bottom: 15px;">📊 Final Assessment</h3>
+              <div style="background-color: #1a3c5e; color: #ffffff; padding: 20px; border-radius: 8px; text-align: center; margin-bottom: 20px;">
+                <h4 style="margin: 0 0 5px 0; font-size: 14px; color: #c9a84c; text-transform: uppercase; letter-spacing: 1px;">Overall Suitability</h4>
+                <p style="margin: 0; font-size: 18px; font-weight: bold;">${val(formData.summary.suitability)}</p>
+              </div>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; font-size: 14px;">
+                <tr>
+                  <th width="30%" style="padding: 12px; border: 1px solid #e0d9cc; background-color: #f5f2eb; text-align: left; color: #1a3c5e;">Key Strengths</th>
+                  <td width="70%" style="padding: 12px; border: 1px solid #e0d9cc; color: #333;">${val(formData.summary.strengths)}</td>
+                </tr>
+                <tr>
+                  <th style="padding: 12px; border: 1px solid #e0d9cc; background-color: #f5f2eb; text-align: left; color: #c0392b;">Concerns / Red Flags</th>
+                  <td style="padding: 12px; border: 1px solid #e0d9cc; color: #333;">${val(formData.summary.concerns)}</td>
+                </tr>
+                <tr>
+                  <th style="padding: 12px; border: 1px solid #e0d9cc; background-color: #f5f2eb; text-align: left; color: #1a3c5e;">Next Action Items</th>
+                  <td style="padding: 12px; border: 1px solid #e0d9cc; color: #333;">${val(formData.summary.nextSteps)}</td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f5f2eb; padding: 20px; text-align: center; border-top: 1px solid #e0d9cc;">
+              <p style="margin: 0; color: #8a8178; font-size: 12px;">This report was securely generated via the Events And Pro Recce System.</p>
+              <p style="margin: 5px 0 0 0; color: #8a8178; font-size: 11px;">Rating submitted: ${formData.rating}/5 Stars</p>
+            </td>
+          </tr>
+        </table>
+        
       </body>
       </html>
     `;
@@ -312,6 +514,7 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
 
   const submitForm = async () => {
     setIsSubmitting(true);
+    setErrorMessage('');
     const htmlEmail = generateEmailHTML();
     
     // Check if running inside the Canvas preview (which restricts localhost fetches via HTTPS)
@@ -328,27 +531,36 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
     }
 
     try {
-      // UPDATED for Vercel: Changed from http://localhost:3001/api/send-email to the relative /api path
+      // Relative path for Vercel Serverless Function
       const response = await fetch('/api/send-email', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          to: ['eventsandpro@gmail.com'],
+          to: ['eventsandpro@gmail.com'], 
           subject: `Venue Recce Report: ${formData.venueName || 'New Venue'}`,
           html: htmlEmail
         })
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.error || 'Failed to send email via Serverless Function');
+        let errorMsg = `Server error ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData?.error || errorData?.message || errorMsg;
+        } catch(e) {
+          // Fallback if response isn't JSON
+          const textData = await response.text();
+          if(response.status === 404) errorMsg = "404 Not Found: Vercel couldn't find the /api/send-email.js folder. Ensure it's at the root.";
+        }
+        throw new Error(errorMsg);
       }
       
       setSubmitStatus('success');
       setShowModal(true);
     } catch (error) {
+      setErrorMessage(error.message); // Capture exact error for the UI
       if (error instanceof TypeError && error.message === 'Failed to fetch') {
         setSubmitStatus('server_error');
       } else {
@@ -366,7 +578,7 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
 
   // --- RENDER HELPERS ---
   const renderStepNav = () => (
-    <div className="progress-wrap">
+    <div className="progress-wrap hide-scrollbar">
       <div className="progress-steps">
         {['Basic Info', 'Dimensions', 'Checklist', "Do's & Don'ts", 'Photos', 'Timings', 'Permits', 'Files', 'Summary'].map((label, i) => (
           <button 
@@ -393,26 +605,36 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
           --success: #27ae60; --accent: #1a3c5e;
         }
         body { font-family: 'DM Sans', sans-serif; background: var(--cream); color: var(--ink); margin:0; padding:0; -webkit-font-smoothing: antialiased; }
+        
+        /* Utility Classes for Mobile Responsiveness */
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; border-radius: 8px; }
+        
         .header { background: var(--ink); color: var(--white); padding: 20px 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: 4px solid var(--gold); position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
         .brand { display: flex; align-items: center; gap: 16px; }
         .brand-icon { width: 52px; height: 52px; background: linear-gradient(135deg, var(--gold), #d4b55b); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 4px 12px rgba(201,168,76,0.3); }
         .brand-text h1 { font-family: 'Playfair Display', serif; font-size: 24px; font-weight: 500; margin:0; letter-spacing: 0.5px; }
         .brand-text p { font-size: 11px; color: var(--gold-light); letter-spacing: 2.5px; text-transform: uppercase; margin: 4px 0 0 0; font-weight: 400;}
         .doc-badge { background: rgba(201,168,76,0.15); color: var(--gold-light); border: 1px solid rgba(201,168,76,0.3); font-size: 11px; font-weight: 500; padding: 6px 16px; border-radius: 20px; letter-spacing: 1.5px; text-transform: uppercase; }
+        
         .progress-wrap { background: var(--white); border-bottom: 1px solid var(--border); padding: 0 32px; overflow-x: auto; box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
-        .progress-steps { display: flex; min-width: 700px; }
-        .step-btn { flex: 1; padding: 18px 10px; border: none; background: transparent; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0.8px; text-transform: uppercase; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s ease; white-space: nowrap; }
+        .progress-steps { display: flex; min-width: max-content; }
+        .step-btn { flex: 1; padding: 18px 16px; border: none; background: transparent; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0.8px; text-transform: uppercase; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s ease; white-space: nowrap; }
         .step-btn.active { color: var(--gold); border-bottom-color: var(--gold); }
         .step-btn.done { color: var(--accent); }
         .step-btn:hover:not(.active) { color: var(--ink); }
+        
         .container-main { max-width: 900px; margin: 0 auto; padding: 48px 24px 80px; }
         .section-card { background: var(--white); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin-bottom: 32px; animation: fadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 8px 30px rgba(0,0,0,0.04); }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        
         .section-head { background: var(--ink); color: var(--white); padding: 24px 32px; display: flex; align-items: center; gap: 18px; position: relative; overflow: hidden; }
         .section-head::after { content: ''; position: absolute; top:0; right:0; bottom:0; width: 4px; background: var(--gold); }
         .section-icon { width: 46px; height: 46px; background: rgba(201,168,76,0.15); color: var(--gold); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; border: 1px solid rgba(201,168,76,0.3); }
         .section-head h2 { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 600; margin:0; letter-spacing: 0.5px; }
         .section-head p { font-size: 13px; color: #b0b0b0; margin: 4px 0 0 0; font-weight: 400; }
+        
         .section-body { padding: 32px; }
         .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
         .field-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
@@ -421,51 +643,92 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
         .field.full { grid-column: 1 / -1; }
         label { font-size: 12px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); }
         label .req { color: var(--danger); margin-left: 4px; }
+        
         input[type="text"], input[type="number"], input[type="date"], input[type="time"], input[type="email"], input[type="tel"], input[type="url"], select, textarea { border: 1.5px solid var(--border); border-radius: 10px; padding: 12px 16px; font-family: 'DM Sans', sans-serif; font-size: 14px; color: var(--ink); background: var(--cream); width: 100%; box-sizing: border-box; transition: all 0.2s ease; }
         input:focus, select:focus, textarea:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 4px rgba(201,168,76,0.15); background: var(--white); }
         textarea { resize: vertical; min-height: 100px; line-height: 1.5; }
-        .dim-table, .timing-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+        
+        .dim-table, .timing-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 800px; }
         .dim-table th, .timing-table th { background: var(--section-bg); font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); padding: 14px; text-align: left; border-bottom: 2px solid var(--border); }
         .timing-table th { background: var(--ink); color: var(--gold); border-bottom: none; }
         .dim-table td, .timing-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
         .dim-table input, .timing-table input { padding: 8px 12px; border-radius: 6px; }
         .add-row-btn { margin-top: 16px; background: transparent; border: 2px dashed var(--gold); color: var(--gold); padding: 10px 20px; border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
         .add-row-btn:hover { background: rgba(201,168,76,0.1); }
+        
         .checklist { display: flex; flex-direction: column; gap: 12px; }
         .check-item { display: flex; align-items: center; gap: 14px; padding: 14px 18px; background: var(--section-bg); border-radius: 10px; border: 1px solid var(--border); cursor: pointer; transition: all 0.2s; }
         .check-item:hover { border-color: var(--gold); background: #fdf9ee; }
         .check-item.checked { background: #f0f9ee; border-color: var(--success); box-shadow: 0 2px 8px rgba(39,174,96,0.1); }
-        .check-item input { width: 20px; height: 20px; accent-color: var(--gold); cursor: pointer; }
+        .check-item input { width: 20px; height: 20px; accent-color: var(--gold); cursor: pointer; flex-shrink: 0; }
         .check-item span { font-weight: 400; color: var(--ink); }
         .check-group-title { font-size: 12px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin: 24px 0 12px; display: flex; align-items: center; gap: 8px; }
         .check-group-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+        
         .dos-donts { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
         .dos-card { background: linear-gradient(to bottom right, #f0f9ee, #e3f2e1); border: 1px solid #a8d5b5; padding: 24px; border-radius: 16px; box-shadow: 0 4px 12px rgba(39,174,96,0.05); }
         .donts-card { background: linear-gradient(to bottom right, #fdf0ee, #fbe3e0); border: 1px solid #e5b0a8; padding: 24px; border-radius: 16px; box-shadow: 0 4px 12px rgba(192,57,43,0.05); }
+        
         .photo-upload-area { border: 2px dashed var(--gold); border-radius: 16px; padding: 48px 24px; text-align: center; background: #fdf9ee; cursor: pointer; position: relative; transition: all 0.2s; }
         .photo-upload-area:hover { background: #faf4dd; border-color: #b8952f; }
-        .photo-upload-area input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+        .photo-upload-area input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
         .photo-preview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px; margin-top: 24px; }
         .photo-thumb { border-radius: 10px; overflow: hidden; aspect-ratio: 1; position: relative; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+        
         .file-upload-row { display: flex; align-items: center; gap: 16px; padding: 16px 20px; background: var(--white); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.02); transition: all 0.2s; }
         .file-upload-row:hover { border-color: var(--gold); box-shadow: 0 4px 12px rgba(201,168,76,0.1); }
-        .permit-row { display: grid; grid-template-columns: 2fr 1.5fr 1fr 1fr; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--border); align-items: center; }
+        
+        .permit-row { display: grid; grid-template-columns: 2fr 1.5fr 1fr 1fr; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--border); align-items: center; min-width: 700px; }
         .permit-row.header { padding: 10px 0; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--border); }
+        
         .nav-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border); }
-        .btn { padding: 14px 32px; border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; letter-spacing: 0.5px; }
+        .btn { padding: 14px 32px; border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; letter-spacing: 0.5px; display: inline-flex; align-items: center; justify-content: center; }
         .btn-prev { background: var(--white); border: 1.5px solid var(--border); color: var(--ink); }
         .btn-prev:hover { background: var(--section-bg); border-color: var(--muted); }
         .btn-next { background: var(--ink); color: var(--white); box-shadow: 0 4px 12px rgba(13,13,13,0.2); }
         .btn-next:hover { background: var(--accent); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(13,13,13,0.3); }
         .btn-submit { background: var(--gold); color: var(--ink); box-shadow: 0 4px 12px rgba(201,168,76,0.3); }
         .btn-submit:hover { background: #b8952f; transform: translateY(-1px); box-shadow: 0 6px 16px rgba(201,168,76,0.4); }
+        
         .star-rating { display: flex; flex-direction: row-reverse; gap: 8px; justify-content: flex-end;}
         .star-rating input { display: none; }
         .star-rating label { font-size: 32px; cursor: pointer; color: var(--border); transition: all 0.2s; }
         .star-rating input:checked ~ label, .star-rating label:hover, .star-rating label:hover ~ label { color: var(--gold); transform: scale(1.1); }
         hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
-        @media (max-width: 640px) { .field-grid { grid-template-columns: 1fr; } .dos-donts { grid-template-columns: 1fr; } .permit-row { grid-template-columns: 1fr; } .header { padding: 16px; } .container-main { padding: 24px 16px 80px; } }
+        
+        /* --- MOBILE RESPONSIVE TWEAKS --- */
+        @media (max-width: 768px) { 
+          .header { padding: 16px 20px; } 
+          .brand-icon { width: 40px; height: 40px; font-size: 20px; }
+          .brand-text h1 { font-size: 18px; }
+          .brand-text p { font-size: 9.5px; letter-spacing: 1.5px; }
+          
+          .progress-wrap { padding: 0 16px; }
+          .step-btn { padding: 16px 12px; font-size: 11px; }
+          
+          .container-main { padding: 24px 16px 80px; } 
+          .section-card { border-radius: 12px; margin-bottom: 24px; }
+          .section-head { padding: 16px 20px; gap: 12px; }
+          .section-head h2 { font-size: 18px; }
+          .section-icon { width: 36px; height: 36px; font-size: 16px; }
+          .section-body { padding: 20px; }
+          
+          .field-grid { grid-template-columns: 1fr !important; gap: 16px; } 
+          .dos-donts { grid-template-columns: 1fr; gap: 16px; } 
+          
+          .photo-upload-area { padding: 32px 16px; }
+          .file-upload-row { flex-direction: column; align-items: stretch; gap: 12px; text-align: center; }
+          .file-upload-row > div:nth-child(2) { text-align: center; }
+          
+          /* Stack Bottom Navigation */
+          .nav-bar { flex-direction: column-reverse; gap: 16px; align-items: stretch; text-align: center; }
+          .nav-bar > * { width: 100%; }
+          .nav-bar .step-info { margin-bottom: 8px; order: 3; }
+          
+          .modal-content { padding: 32px 20px !important; }
+          .modal-content h2 { font-size: 22px !important; }
+        }
       `}</style>
 
       {/* HEADER */}
@@ -474,10 +737,10 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
           <div className="brand-icon">📋</div>
           <div className="brand-text">
             <h1>Events And Pro</h1>
-            <p>Venue Recce Report System</p>
+            <p>Venue Recce Report</p>
           </div>
         </div>
-        <div className="doc-badge hidden sm:block">🔒 Internal Use</div>
+        <div className="doc-badge hidden sm:block" style={{display: typeof window !== 'undefined' && window.innerWidth < 640 ? 'none' : 'block'}}>🔒 Internal Use</div>
       </div>
 
       {renderStepNav()}
@@ -556,24 +819,26 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
               <div className="section-icon">📐</div>
               <div><h2>Space Dimensions & Capacity</h2></div>
             </div>
-            <div className="section-body" style={{overflowX: 'auto'}}>
-              <table className="dim-table">
-                <thead><tr><th>Space</th><th>L (ft)</th><th>W (ft)</th><th>H (ft)</th><th>Area</th><th>Seating</th><th>Notes</th><th></th></tr></thead>
-                <tbody>
-                  {formData.dimensions.map(dim => (
-                    <tr key={dim.id}>
-                      <td><input type="text" value={dim.name} onChange={(e) => handleDimChange(dim.id, 'name', e.target.value)} /></td>
-                      <td><input type="number" value={dim.l} onChange={(e) => handleDimChange(dim.id, 'l', e.target.value)} style={{width:'70px'}}/></td>
-                      <td><input type="number" value={dim.w} onChange={(e) => handleDimChange(dim.id, 'w', e.target.value)} style={{width:'70px'}}/></td>
-                      <td><input type="number" value={dim.h} onChange={(e) => handleDimChange(dim.id, 'h', e.target.value)} style={{width:'70px'}}/></td>
-                      <td><input type="number" value={dim.area} readOnly style={{background:'#f0f0f0', width:'80px'}}/></td>
-                      <td><input type="text" value={dim.seating} onChange={(e) => handleDimChange(dim.id, 'seating', e.target.value)} style={{width:'80px'}}/></td>
-                      <td><input type="text" value={dim.notes} onChange={(e) => handleDimChange(dim.id, 'notes', e.target.value)} /></td>
-                      <td><button onClick={() => removeDimRow(dim.id)} style={{border:'none',background:'none',color:'#c0392b',cursor:'pointer',fontSize:'18px'}}>✕</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="section-body">
+              <div className="table-responsive hide-scrollbar">
+                <table className="dim-table">
+                  <thead><tr><th>Space</th><th>L (ft)</th><th>W (ft)</th><th>H (ft)</th><th>Area</th><th>Seating</th><th>Notes</th><th></th></tr></thead>
+                  <tbody>
+                    {formData.dimensions.map(dim => (
+                      <tr key={dim.id}>
+                        <td><input type="text" value={dim.name} onChange={(e) => handleDimChange(dim.id, 'name', e.target.value)} /></td>
+                        <td><input type="number" value={dim.l} onChange={(e) => handleDimChange(dim.id, 'l', e.target.value)} style={{width:'70px'}}/></td>
+                        <td><input type="number" value={dim.w} onChange={(e) => handleDimChange(dim.id, 'w', e.target.value)} style={{width:'70px'}}/></td>
+                        <td><input type="number" value={dim.h} onChange={(e) => handleDimChange(dim.id, 'h', e.target.value)} style={{width:'70px'}}/></td>
+                        <td><input type="number" value={dim.area} readOnly style={{background:'#f0f0f0', width:'80px'}}/></td>
+                        <td><input type="text" value={dim.seating} onChange={(e) => handleDimChange(dim.id, 'seating', e.target.value)} style={{width:'80px'}}/></td>
+                        <td><input type="text" value={dim.notes} onChange={(e) => handleDimChange(dim.id, 'notes', e.target.value)} /></td>
+                        <td><button onClick={() => removeDimRow(dim.id)} style={{border:'none',background:'none',color:'#c0392b',cursor:'pointer',fontSize:'18px'}}>✕</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               <button className="add-row-btn" onClick={addDimRow}>+ Add Space</button>
               <hr />
               <div className="field-grid cols-3">
@@ -700,22 +965,24 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
               <div className="section-icon">🕐</div>
               <div><h2>Venue Timings & Schedule</h2></div>
             </div>
-            <div className="section-body" style={{overflowX: 'auto'}}>
-              <table className="timing-table">
-                <thead><tr><th>Activity</th><th>Date</th><th>Start</th><th>End</th><th>Area</th><th>Notes</th></tr></thead>
-                <tbody>
-                  {formData.timings.map(t => (
-                    <tr key={t.id}>
-                      <td><input type="text" value={t.activity} onChange={(e) => handleArrayChange('timings', t.id, 'activity', e.target.value)} /></td>
-                      <td><input type="date" value={t.date} onChange={(e) => handleArrayChange('timings', t.id, 'date', e.target.value)} /></td>
-                      <td><input type="time" value={t.start} onChange={(e) => handleArrayChange('timings', t.id, 'start', e.target.value)} /></td>
-                      <td><input type="time" value={t.end} onChange={(e) => handleArrayChange('timings', t.id, 'end', e.target.value)} /></td>
-                      <td><input type="text" value={t.area} onChange={(e) => handleArrayChange('timings', t.id, 'area', e.target.value)} /></td>
-                      <td><input type="text" value={t.notes} onChange={(e) => handleArrayChange('timings', t.id, 'notes', e.target.value)} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="section-body">
+              <div className="table-responsive hide-scrollbar">
+                <table className="timing-table">
+                  <thead><tr><th>Activity</th><th>Date</th><th>Start</th><th>End</th><th>Area</th><th>Notes</th></tr></thead>
+                  <tbody>
+                    {formData.timings.map(t => (
+                      <tr key={t.id}>
+                        <td><input type="text" value={t.activity} onChange={(e) => handleArrayChange('timings', t.id, 'activity', e.target.value)} /></td>
+                        <td><input type="date" value={t.date} onChange={(e) => handleArrayChange('timings', t.id, 'date', e.target.value)} /></td>
+                        <td><input type="time" value={t.start} onChange={(e) => handleArrayChange('timings', t.id, 'start', e.target.value)} /></td>
+                        <td><input type="time" value={t.end} onChange={(e) => handleArrayChange('timings', t.id, 'end', e.target.value)} /></td>
+                        <td><input type="text" value={t.area} onChange={(e) => handleArrayChange('timings', t.id, 'area', e.target.value)} /></td>
+                        <td><input type="text" value={t.notes} onChange={(e) => handleArrayChange('timings', t.id, 'notes', e.target.value)} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -728,25 +995,27 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
               <div><h2>Permissions & Licences</h2></div>
             </div>
             <div className="section-body">
-              <div className="permit-row header">
-                <div>Permit Name</div><div>Responsible</div><div>Status</div><div>Due Date</div>
-              </div>
-              {formData.permits.map(p => (
-                <div className="permit-row" key={p.id}>
-                  <div><input type="text" value={p.name} onChange={(e) => handleArrayChange('permits', p.id, 'name', e.target.value)} /></div>
-                  <div>
-                    <select value={p.responsible} onChange={(e) => handleArrayChange('permits', p.id, 'responsible', e.target.value)}>
-                      <option>Events And Pro</option><option>Venue</option><option>Client</option><option>Shared</option>
-                    </select>
-                  </div>
-                  <div>
-                    <select value={p.status} onChange={(e) => handleArrayChange('permits', p.id, 'status', e.target.value)}>
-                      <option>Pending</option><option>Obtained</option><option>Not Required</option>
-                    </select>
-                  </div>
-                  <div><input type="date" value={p.date} onChange={(e) => handleArrayChange('permits', p.id, 'date', e.target.value)} /></div>
+              <div className="table-responsive hide-scrollbar">
+                <div className="permit-row header">
+                  <div>Permit Name</div><div>Responsible</div><div>Status</div><div>Due Date</div>
                 </div>
-              ))}
+                {formData.permits.map(p => (
+                  <div className="permit-row" key={p.id}>
+                    <div><input type="text" value={p.name} onChange={(e) => handleArrayChange('permits', p.id, 'name', e.target.value)} /></div>
+                    <div>
+                      <select value={p.responsible} onChange={(e) => handleArrayChange('permits', p.id, 'responsible', e.target.value)}>
+                        <option>Events And Pro</option><option>Venue</option><option>Client</option><option>Shared</option>
+                      </select>
+                    </div>
+                    <div>
+                      <select value={p.status} onChange={(e) => handleArrayChange('permits', p.id, 'status', e.target.value)}>
+                        <option>Pending</option><option>Obtained</option><option>Not Required</option>
+                      </select>
+                    </div>
+                    <div><input type="date" value={p.date} onChange={(e) => handleArrayChange('permits', p.id, 'date', e.target.value)} /></div>
+                  </div>
+                ))}
+              </div>
               <button className="add-row-btn" onClick={addPermitRow}>+ Add Permit</button>
             </div>
           </div>
@@ -814,8 +1083,9 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
 
         {/* NAVIGATION BOTTOM */}
         <div className="nav-bar">
+          <div className="step-info">Step {step + 1} of 9</div>
           {step > 0 ? <button className="btn btn-prev" onClick={prevStep}>← Previous</button> : <div></div>}
-          <div style={{fontSize: '13px', color: 'var(--muted)', fontWeight: 400}}>Step {step + 1} of 9</div>
+          
           {step < totalSteps - 1 ? (
              <button className="btn btn-next" onClick={nextStep}>Next →</button>
           ) : (
@@ -829,8 +1099,8 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
 
       {/* SUCCESS / ERROR MODAL */}
       {showModal && (
-        <div style={{position:'fixed', inset:0, background:'rgba(13,13,13,0.7)', backdropFilter: 'blur(6px)', zIndex:999, display:'flex', alignItems:'center', justifyContent:'center'}}>
-          <div style={{background:'white', borderRadius:'24px', padding:'48px', maxWidth:'500px', textAlign:'center', boxShadow:'0 24px 80px rgba(0,0,0,0.3)'}}>
+        <div style={{position:'fixed', inset:0, background:'rgba(13,13,13,0.7)', backdropFilter: 'blur(6px)', zIndex:999, display:'flex', alignItems:'center', justifyContent:'center', padding: '16px'}}>
+          <div className="modal-content" style={{background:'white', borderRadius:'24px', padding:'48px', maxWidth:'500px', width: '100%', textAlign:'center', boxShadow:'0 24px 80px rgba(0,0,0,0.3)', maxHeight: '90vh', overflowY: 'auto'}}>
             
             {submitStatus === 'success' ? (
               <>
@@ -844,13 +1114,21 @@ Action Items: ${formData.summary.nextSteps || 'None noted'}
               <>
                 <div style={{fontSize:'64px', marginBottom:'20px'}}>⚠️</div>
                 <h2 style={{fontFamily:"'Playfair Display',serif", fontSize:'26px', fontWeight: 600, marginBottom:'12px', color: 'var(--ink)'}}>API Connection Failed</h2>
-                <p style={{color:'var(--muted)', fontSize:'15px', lineHeight: 1.6, marginBottom:'32px'}}>
-                  Could not connect to the email API. Make sure your serverless functions are deployed properly on Vercel.
-                  <br/><br/>
+                <p style={{color:'var(--muted)', fontSize:'15px', lineHeight: 1.6, marginBottom:'16px'}}>
+                  Could not connect to the email API. Check the error message below.
+                </p>
+                
+                {errorMessage && (
+                  <p style={{color:'var(--danger)', fontSize:'13px', fontWeight: '600', background: '#fdf0ee', padding: '12px', borderRadius: '8px', marginBottom: '24px', wordBreak: 'break-word', textAlign: 'left'}}>
+                    Error Details: {errorMessage}
+                  </p>
+                )}
+
+                <p style={{color:'var(--muted)', fontSize:'13px', lineHeight: 1.6, marginBottom:'24px'}}>
                   To bypass this in the frontend, you can generate an email draft directly using your mail client with all your data pre-filled:
                 </p>
                 <a href={`mailto:eventsandpro@gmail.com?subject=${encodeURIComponent('Venue Recce Report: ' + (formData.venueName || 'New Venue'))}&body=${encodeURIComponent(generateTextReport())}`} 
-                   className="btn btn-submit" style={{display:'inline-block', textDecoration:'none', marginBottom:'24px', width: '100%', boxSizing:'border-box'}}>
+                   className="btn btn-submit" style={{display:'inline-flex', textDecoration:'none', marginBottom:'24px', width: '100%', boxSizing:'border-box'}}>
                    Open Pre-filled Email Draft
                 </a>
               </>
